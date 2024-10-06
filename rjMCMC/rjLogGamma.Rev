@@ -1,0 +1,45 @@
+morpho <- readDiscreteCharacterData("data/matrix.nex")
+taxa <- morpho.taxa()
+moves = VectorMoves()
+monitors = VectorMonitors()
+
+n_taxa <- taxa.size()
+num_branches <- 2 * n_taxa - 2
+
+alpha ~ dnReversibleJumpMixture(1E8, dnUniform(0,1E8), 0.5)
+alpha.setValue(1.0)
+moves.append( mvRJSwitch(alpha, weight=10.0) )
+moves.append( mvScale(alpha, weight=10.0) )
+alpha_indicator := ifelse(alpha == 1E8, 0, 1)
+
+rates_indicator ~ dnCategorical(simplex(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1));
+rates_vec <- v(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+rates_indicator.setValue(15);
+moves.append( mvRandomGeometricWalk(rates_indicator, weight=10.0, tune=FALSE) );
+rates := rates_vec[rates_indicator]
+
+site_rates_indicator ~ dnCategorical(simplex(1, 1));
+site_rates_indicator.setValue(2);
+site_ratesGamma := fnDiscretizeGamma(alpha, alpha, rates)
+moves.append( mvRandomGeometricWalk(site_rates_indicator, weight=10.0, tune=FALSE) );
+site_ratesLognormal := fnDiscretizeDistribution( dnLognormal(ln(alpha), 0.01), rates )
+site_vec = v(site_ratesGamma, site_ratesLognormal)
+site_rates := site_vec[site_rates_indicator]
+
+
+source("rjMCMC/model_Mk.Rev")
+
+
+mymodel = model(alpha, br_len_lambda)
+
+
+
+monitors.append(mnModel(filename="output/acrv_count.log", printgen=100))
+monitors.append(mnFile(filename="output/acrv_count.trees", printgen=100,  phylogeny))
+monitors.append(mnScreen(printgen=100, site_rates_indicator ))
+
+
+mymcmc = mcmc(mymodel, monitors, moves, nrun=2)
+mymcmc.run(generations=10000000)
+
+q()
