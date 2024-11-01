@@ -1,0 +1,452 @@
+---
+title: "ACRV"
+output: html_document
+date: "2024-03-14"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(reshape2)
+library(ape)
+library(Claddis)
+library(vioplot)
+library(phangorn)
+```
+
+First, let's pull some basics - what model was preferred by what dataset?
+```{r include=FALSE}
+model_indicator <- c()
+alpha_values <-c()
+alpha_indicators <-c()
+names <-c()
+median_pvalues <-c()
+median_lvalues <- c()
+sr1 <- c()
+sr2 <- c()
+sr3 <- c()
+sr4 <- c()
+diffs <-c()
+setwd("2016_and_below")
+for (file in list.files(path=".", pattern=".log")){
+  dataf <- read_delim(file, show_col_types = FALSE)
+  rates_ind = sum(dataf$site_rates_indicator)
+  model_indicator = c(model_indicator, rates_ind)
+  names <- c(names, file)
+  median = median(dataf$alpha)
+  med_ind = median(dataf$alpha_indicator)
+  alpha_values <- c(alpha_values, median)
+  alpha_indicators <- c(alpha_indicators, med_ind)
+  medianP = median(dataf$Posterior)
+  median_pvalues <- c(median_pvalues, medianP)
+  medianL = median(dataf$Likelihood)
+  median_lvalues <- c(median_lvalues, medianL)
+  median1 = median(dataf$`site_rates[1]`)
+  median2 = median(dataf$`site_rates[2]`)
+  median3 = median(dataf$`site_rates[3]`)
+  median4 = median(dataf$`site_rates[4]`)
+  median_vec <- c(median1, median2, median3, median4)
+  min_med <- min(median_vec)
+  max_med <- max(median_vec)
+  diffs <- c(diffs, max_med - min_med)
+  mv1 <- sort(median_vec)[1]
+  mv2 <- sort(median_vec)[2]
+  mv3 <- sort(median_vec)[3]
+  mv4 <- sort(median_vec)[4]
+  sr1 <- c(sr1, mv1)
+  sr2 <- c(sr2, mv2)
+  sr3 <- c(sr3, mv3)
+  sr4 <- c(sr4, mv4)
+}
+```
+
+Wrap it all up in a dataframe:
+```{r}
+
+alpha_indicators <- alpha_indicators[2:570]
+names <- names[2:570]
+alpha_values <- alpha_values[2:570]
+diff_values <- diffs[2:570]
+median_pvalues <-median_pvalues[2:570]
+median_lvalues <- median_lvalues[2:570]
+sr1 <- sr1[2:570]
+sr2 <- sr2[2:570]
+sr3 <- sr3[2:570]
+sr4 <- sr4[2:570]
+
+dataframe <- data.frame(names, model_indicators, alpha_indicators, alpha_values, median_pvalues, median_lvalues, diff_values, sr1, sr2, sr3, sr4)
+
+```
+
+First, model preferences. Let's start with preferring one model over the other:
+
+```{r}
+
+ggplot(data = dataframe, aes(x = model_indicator)) + geom_histogram() + xlab("Preference Between Gamma and Lognormal") + geom_vline(xintercept = 1.5) + theme_bw() +
+  annotate("text",               
+          x = 1.25, y = 225,         
+           label = "Prefer Gamma Model") +
+  annotate("text",               
+          x = 1.8, y = 225,         
+           label = "Prefer Lognormal Model")
+
+
+```
+Well, shoot. A ton of these matrices prefer the Lognormal Model. Let's pull those out so we can test the effects of model misspecification if we use the Gamma model on them.
+
+```{r}
+
+library(phangorn)
+
+log_pref <-dataframe %>% 
+  filter(model_indicator > 1.5)
+
+files <- log_pref$names
+#Remove some files that had malformed outputs 
+files <- files[files != 'Bai.log']
+files <- files[files != "de_Pinna_etal_2007a.nex.clear.log"]
+files <- files[files != "Gasulla_etal_2015aa.nex.clear.log"]
+files <- files[files != "Ksepka_et_Clarke_2010a.nex.clear.log"]
+files <- files[files != "Langer_etal_2014a.nex.clear.log"]
+files <- files[files != "Ni_etal_2016ba.nex.clear.log"]
+files <- files[files != "Nicholls_1999a.nex.clear.log"]
+files <- files[files != "Norell_1989a.nex.clear.log"]
+files <- files[files != "Ruta_et_Coates_2003a.nex.clear.log"]
+files <- files[files != "Shirai_1996a.nex.clear.log"]
+files <- files[files != "Spielman_etal_2008aa.nex.clear.log"]
+files <- files[files != "Tanaka_etal_2018b.nex.clear.log"]
+files <- files[files != "Tattersall_1993a.nex.clear.log"]
+files <- files[files != "Tsuji_2017a.nex.clear.log"]
+files <- files[files != "Tsuji_etal_2013b.nex.clear.log"]
+files <- files[files != "Tykoski_etal_2019a.nex.clear.log"]
+files <- files[files != "Valin_et_Laurin_2004a.nex.clear.log"]
+files <- files[files != "Vari_1995a.nex.clear.log"]
+files <- files[files != "Verzi_etal_inpressa.nex.clear.log"]
+files <- files[files != "Verzi_etal_inpressa.nex.clear.log"]
+files <- files[files != "Vigliotta_2008a.nex.clear.log"]
+files <- files[files != "Vincent_et_Storrs_2019ab.nex.clear.log"]
+files <- files[files != "Vlachos_et_Rabi_inpressa.nex.clear.log"]
+files <- files[files !=  "Zanata_et_Vari_2005a.nex.clear.log"]
+files <- files[files !=  "Zalmout_etal_2010a.nex.clear.log"]
+files <- files[files !=  "Zanno_et_Makovicky_2011ab.nex.clear.log"]
+files <- files[files !=  "Zhu_et_Schultze_2001a.nex.clear.log"]
+
+dists <- c()
+b_score <- c()
+diffs <- c()
+
+
+for (file in files){
+  filename <-  unlist(strsplit(file, "[.]"))
+  gname <- paste0("logs_gamma_only/", filename[1], ".", filename[2], ".final.mcc.tre")
+  lname <- paste0("2016_and_below/", filename[1], ".", filename[2], ".", filename[3], ".trees.mcc.tre")
+
+  gamma_tree <- read.nexus(gname)
+  lognorm_tree <- read.nexus(lname)
+  dists <- c(RF.dist(gamma_tree, lognorm_tree, normalize = TRUE), dists)
+  b_score <- c(wRF.dist(gamma_tree, lognorm_tree), b_score)
+  diffs <- c(sum(gamma_tree$edge.length) - sum(lognorm_tree$edge.length), diffs)
+}
+
+rf <- data.frame(dists, b_score, diffs)  
+
+
+ggplot(data = rf, aes(x = dists)) + geom_histogram() + theme_bw() + xlim(0, 1) + ylim(0, 30) +
+   labs(title = "Misspecified Model: RF Distance",
+         x = "Scaled RF distance between Gamma and Lognormal trees",
+         y = "Count") +
+  annotate("text",               
+          x = 0.2, y = 30,         
+           label = "Total Datasets = 318") 
+ggsave("GammaLogRF.png")
+
+ggplot(data = rf, aes(x = diffs)) + geom_histogram() + theme_bw() + xlim(-10, 10) + ylim(0, 30) +
+   labs(title = "Misspecified Model: Branch Length Difference",
+         x = "Branch Length distance between Gamma and Lognormal trees",
+         y = "Count") +
+  annotate("text",               
+          x = -5, y = 30,         
+           label = "Lognormal Trees Longer") +
+  annotate("text",               
+          x = 5, y = 30,         
+           label = "Gamma Trees Longer") +
+   geom_vline(xintercept = 0)
+ggsave("GammaLogBscore.png")
+
+```
+
+
+
+```{r}
+#dataframes that are filtered into ACRV being favored (alpha indicator=1) or not (alpha indicator=0)
+acrv_0 <- dataframe %>%
+  filter(alpha_indicators == 0)
+acrv_0.5 <- dataframe %>%
+  filter(alpha_indicators == 0.5)
+acrv_1 <- dataframe %>%
+  filter(alpha_indicators == 1)
+
+#model preference
+model_prefs <- dataframe %>% 
+  count(alpha_indicators == 1)
+
+filter_100 <- dataframe %>% 
+  filter(alpha_values > 100)
+
+filtered_alpha0 <- dataframe %>%
+  filter(alpha_indicators != 1)
+
+filtered_diffs <- dataframe %>% 
+  filter(alpha_indicators != 1.0) 
+
+filtered_acrv <- dataframe %>% 
+  filter(alpha_indicators == 1) 
+
+filtered_g4 <- dataframe %>%
+  filter(alpha_indicators == 1)
+
+d3 <- density(filtered_g4$diff_values)
+deng1_1 <- density(as.vector(filtered_g4$sr1))
+deng2_1 <- density(as.vector(filtered_g4$sr2))
+deng3_1 <- density(as.vector(filtered_g4$sr3))
+deng4_1 <- density(as.vector(filtered_g4$sr4))
+
+sr_df <- melt(dataframe[,5:8])
+g1 <- as.vector(dataframe$sr1)
+g2 <- as.vector(dataframe$sr2)
+g3 <- as.vector(dataframe$sr3)
+g4 <- as.vector(dataframe$sr4)
+deng1 <- density(as.vector(dataframe$sr1))
+deng2 <- density(as.vector(dataframe$sr2))
+deng3 <- density(as.vector(dataframe$sr3))
+deng4 <- density(as.vector(dataframe$sr4))
+
+# Quick count - 385 of 577 datasets favor Rate Het
+
+
+```
+
+Now, for comparisons. First, let's look at the effects of not including ACRV. If the dataset favors ACRV, but it is not included, we find it in the no_acrv_acrv_favored directory.
+
+```{r include=FALSE}
+
+alpha_values <-c(0)
+alpha_indicators <-c(0)
+names <-c(0)
+median_pvalues <-c(0)
+median_lvalues <- c(0)
+setwd("no_acrv_acrv_favored/")
+for (file in list.files(path=".", pattern=".log")){
+  dataf <- read_delim(file, show_col_types = FALSE)
+  names <- c(names, file)
+    medianP = median(dataf$Posterior)
+    median_pvalues <- c(median_pvalues, medianP)
+    medianL = median(dataf$Likelihood)
+    median_lvalues <- c(median_lvalues, medianL)
+}
+
+names <- names[2:401]
+median_pvalues <- median_pvalues[2:401]
+median_lvalues <- median_lvalues[2:401]
+
+no_acrv_dataframe_p <- data.frame(names,median_pvalues)
+no_acrv_dataframe_l <- data.frame(names,median_lvalues)
+
+```
+
+We can merge this to the dataframe of posterior probabilities for the ACRV sets. Then, we can calculate how badly it messes up the PP to not have ACRV:
+
+```{r}
+ pvalue_dataframe <- dataframe %>% 
+  select(names, median_pvalues)
+
+ lvalue_dataframe <- dataframe %>%
+   select(names, median_lvalues)
+
+ no_acrv_dataframe_p <- no_acrv_dataframe_p %>% 
+  select(names, median_pvalues) %>% 
+   rename("no_acrv_pvalues" = median_pvalues)
+ 
+ no_acrv_dataframe_l <- no_acrv_dataframe_l %>%
+   select(names, median_lvalues) %>%
+    rename("no_acrv_lvalues" = median_lvalues)
+
+joined_p <- merge(pvalue_dataframe, no_acrv_dataframe_p, by = "names", )
+joined_l <- merge(lvalue_dataframe, no_acrv_dataframe_l, by = "names", )
+
+new_p <- joined_p %>%
+  mutate(diff = median_pvalues - no_acrv_pvalues)
+new_l <- joined_l %>%
+  mutate(diff = median_lvalues - no_acrv_lvalues)
+```
+And now the ones where ACRV was un favored and left off:
+```{r include=FALSE}
+
+alpha_values <-c(0)
+alpha_indicators <-c(0)
+names <-c(0)
+median_pvalues <-c(0)
+median_lvalues <- c(0)
+setwd("no_het-preferNoHet/log/")
+for (file in list.files(path=".", pattern=".log")){
+  dataf <- read_delim(file, show_col_types = FALSE)
+  names <- c(names, file)
+    medianP = median(dataf$Posterior)
+    median_pvalues <- c(median_pvalues, medianP)
+    medianL = median(dataf$Likelihood)
+    median_lvalues <- c(median_lvalues, medianL)
+}
+
+names <- names[2:153]
+median_pvalues <- median_pvalues[2:153]
+median_lvalues <- median_lvalues[2:153]
+
+unfavoreddataframe_p <- data.frame(names,median_pvalues)
+unfavoreddataframe_l <- data.frame(names,median_lvalues)
+
+unfavoreddataframe_p <- unfavoreddataframe_p %>% 
+  select(names, median_pvalues) %>% 
+   rename("no_acrv_pvalues" = median_pvalues)
+
+unfavoreddataframe_l <- unfavoreddataframe_l %>% 
+  select(names, median_lvalues) %>% 
+   rename("no_acrv_lvalues" = median_lvalues)
+
+joined2_p <- merge(pvalue_dataframe, unfavoreddataframe_p, by = "names", )
+joined2_l <- merge(lvalue_dataframe, unfavoreddataframe_l, by = "names", )
+
+new2_p <- joined2_p %>%
+  mutate(diff = median_pvalues - no_acrv_pvalues)
+new2_l <- joined2_l %>%
+  mutate(diff = median_lvalues - no_acrv_lvalues)
+```
+
+
+```{r}
+trees_no_acrv <- list.files(path="no_acrv_acrv_favored/", pattern="mcc.tre")
+trees_acrv <- list.files(path="rjMCMC_new/", pattern="mcc.tre")
+shared_trees <- trees_no_acrv[trees_no_acrv %in% trees_acrv]
+shared_trees <- shared_trees[shared_trees != "Boyer_etal_2018a.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Ely_et_Case_inpressa.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Evans_etal_2012a.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Femenias-Gual_etal_2017a.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Fiorillo_et_Tykoski_2014ab.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Foffa_etal_inpressa.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Geroto_et_Bertini_inpressa.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Groves_et_Eaglen_1988a.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Halliday_etal_2016a.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Halliday_etal_inpressba.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Halliday_etal_inpressbb.nex.final.mcc.tre"]
+shared_trees <- shared_trees[shared_trees != "Longrich_etal_2012a.nex.final.mcc.tre"]
+
+dists <- c(0)
+b_score <- c(0)
+diffs <- c(0)
+
+for (tree in shared_trees){
+  tree
+    acrv_path <- paste0("rjMCMC_new/", tree)
+    no_acrv_path <- paste0("no_acrv_acrv_favored/", tree)
+    acrv_tree <- read.nexus(acrv_path)
+    no_acrv_tree <- read.nexus(no_acrv_path)
+    dists <- c(RF.dist(acrv_tree, no_acrv_tree, normalize = TRUE), dists)
+    b_score <- c(wRF.dist(acrv_tree, no_acrv_tree), b_score)
+    diffs <- c(sum(acrv_tree$edge.length) - sum(no_acrv_tree$edge.length), diffs)
+}
+
+rf <- data.frame(dists, b_score, diffs)
+```
+
+
+Figures 
+Figure 1
+```{r}
+par(mfrow=c(2,1),
+    mar=c(4,4,1.5,0.75))
+hist(dataframe$alpha_indicators, main="", xlim=c(0,1), ylim=c(0,450), xlab="ACRV Preference", ylab = "Count", yaxs="i")
+mtext("A", adj=-0.125, line=0, cex=2)
+mtext("Strong Preference:
+      No ACRV", adj=0.04, line=-3.55, cex=0.55)
+mtext("Strong Preference:
+    ACRV            ", adj=0.975, line=-0.95, cex=0.55)
+
+hist(dataframe$alpha_values, main="", yaxs="i", ylab = "Count", xlab = "Alpha Value",
+     xlim=c(0, 1e+08), ylim=c(0, 300), breaks = 50)
+mtext("B", adj=-0.125, line=0, cex=2)
+text(0.20e+07, 195, "Strong ACRV", cex=0.55)
+text(9.85e+07, 280, "No ACRV", cex=0.55)
+```
+
+Figure 2
+```{r}
+nf <- layout( matrix(c(1,3,2,4), nrow=2, byrow=TRUE) )
+par(mar=c(4, 4, 2, 2))
+
+#A
+hist(0, yaxs="i", xlim=c(0,2.5), ylim=c(0,250), lwd=1,
+     main = "ACRV Favored", xlab="Gamma Rate", ylab="Count")
+hist(filtered_acrv$sr1, lwd=1, col= adjustcolor("#B78686", alpha.f = 0.4), breaks = 15, add=TRUE)
+hist(filtered_acrv$sr2, lwd=1, col= adjustcolor("#E6E3A9", alpha.f = 0.4), add=TRUE)
+hist(filtered_acrv$sr3, lwd=1, col= adjustcolor("#A699BF", alpha.f = 0.4), breaks=2, add=TRUE)
+hist(filtered_acrv$sr4, lwd=1, col= adjustcolor("#85B7B4", alpha.f = 0.4), breaks=20, add=TRUE)
+mtext("A", adj=-0.25, line=0, cex=2)
+#C
+hist(filtered_acrv$diff_values, xlab="Maximum Gamma - Minimum Gamma", 
+     ylab="Count", main="", yaxs="i", ylim=c(0,250), col=adjustcolor("black", alpha.f = 0.2))
+mtext("C", adj=-0.25, line=0, cex=2)
+#B
+hist(c(filtered_alpha0$sr1, filtered_alpha0$sr2),
+     main = "ACRV Unfavored", xlab = "Gamma Rate", ylab="",
+     yaxs="i", xlim=c(0.9998, 1.0002), ylim=c(0,200), col = c(adjustcolor("#B78686", alpha.f = 0.4), adjustcolor("#E6E3A9", alpha.f = 0.4)))
+hist(c(filtered_alpha0$sr3, filtered_alpha0$sr4), col= c(adjustcolor("#A699BF", alpha.f = 0.4), adjustcolor("#85B7B4", alpha.f = 0.4)), add = TRUE)
+mtext("B", adj=-0.25, line=0, cex=2)
+#D
+hist(filtered_alpha0$diff_values, xlim=c(0,0.005), main="", yaxs="i", 
+     xlab="Maximum Gamma - Minimum Gamma", ylab="", col=adjustcolor("black", alpha.f = 0.2))
+mtext("D", adj=-0.25, line=0, cex=2)
+```
+
+Figure 3 (posterior probabilities)
+```{r}
+par(mfrow=c(2,1),
+    mar=c(4,4,1.5,0.75))
+
+hist(0, main="ACRV favored but not modeled", yaxs="i", xaxs="i", ylab = "Count", xlab = "Posterior probability",
+     xlim=c(-50, 1000), ylim=c(0, 300))
+hist(new_p$diff, lwd=1, breaks=2500, add=TRUE)
+mtext("A", adj=-0.125, line=0, cex=2)
+
+hist(0, main="ACRV unfavored and not modeled", yaxs="i", xaxs="i", ylab = "Count", xlab = "Posterior probability",
+     xlim=c(-9250, 2250), ylim=c(0, 25))
+hist(new2_p$diff, lwd=1, breaks=100, add=TRUE)
+mtext("B", adj=-0.125, line=0, cex=2)
+```
+
+Figure 3 (Likelihood)
+```{r}
+par(mfrow=c(2,1),
+    mar=c(4,4,1.5,0.75))
+
+hist(0, main="ACRV favored but not modeled", yaxs="i", xaxs="i", ylab = "Count", xlab = "Likelihood",
+     xlim=c(-50, 1000), ylim=c(0, 175))
+hist(new_l$diff, lwd=1, breaks=2500, add=TRUE)
+mtext("A", adj=-0.125, line=0, cex=2)
+
+hist(0, main="ACRV unfavored and not modeled", yaxs="i", xaxs="i", ylab = "Count", xlab = "Likelihood",
+     xlim=c(-9250, 2250), ylim=c(0, 20))
+hist(new2_l$diff, lwd=1, breaks=100, add=TRUE)
+mtext("B", adj=-0.125, line=0, cex=2)
+```
+```{r}
+par(mfrow=c(3,1),
+    mar=c(4,4,1.5,0.75))
+
+hist(rf$dists, breaks=100, main="Robinson-Foulds Metrics", ylab="Count", xlab="RF Distance", yaxs="i", ylim=c(0,125))
+mtext("A", adj=-0.075, line=-0.75, cex=2)
+hist(rf$b_score, breaks=100, main="", ylab="Count", xlab="RF B-Score", yaxs="i", ylim=c(0,175))
+mtext("B", adj=-0.075, line=0, cex=2)
+hist(rf$diffs, breaks=100, main="", ylab="Count", xlab="RF Differences", yaxs="i", ylim=c(0,175))
+mtext("C", adj=-0.075, line=0, cex=2)
+```
