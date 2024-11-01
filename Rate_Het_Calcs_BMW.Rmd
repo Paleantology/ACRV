@@ -225,12 +225,26 @@ deng4 <- density(as.vector(dataframe$sr4))
 
 # Quick count - 385 of 577 datasets favor Rate Het
 
+```
+
+Now, for comparisons. First, let's look at the effects of not including ACRV. If the dataset favors ACRV, but it is not included, we find it in the no_acrv_acrv_favored directory. We calculated which files to run a no-ACRV estimation to compare with by getting a list of files like so:
+
+```{r eval=FALSE}
+#These files prefer ACRV
+files <- acrv_1$files
+dir.create("no_acrv_acrv_favored")
+file_copy(files,"no_acrv_acrv_favored" )
+
+#These files do not
+files <- acrv_0$files
+dir.create("no_Het-prefer_NoHet")
+file_copy(files, "no_Het-prefer_NoHet")
 
 ```
 
-Now, for comparisons. First, let's look at the effects of not including ACRV. If the dataset favors ACRV, but it is not included, we find it in the no_acrv_acrv_favored directory.
+Then, we ran RevBayes with ACRV turned off to look at model misspecification.
 
-```{r include=FALSE}
+```{r}
 
 alpha_values <-c(0)
 alpha_indicators <-c(0)
@@ -323,7 +337,7 @@ new2_l <- joined2_l %>%
   mutate(diff = median_lvalues - no_acrv_lvalues)
 ```
 
-
+We also did some tree comparisons. This one is between trees where ACRV was preferred. We compare those where we allowed ACRV (correct model) or did not (misspecified).
 ```{r}
 trees_no_acrv <- list.files(path="no_acrv_acrv_favored/", pattern="mcc.tre")
 trees_acrv <- list.files(path="rjMCMC_new/", pattern="mcc.tre")
