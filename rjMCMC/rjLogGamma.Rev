@@ -1,4 +1,4 @@
-morpho <- readDiscreteCharacterData("data/matrix.nex")
+morpho <- readDiscreteCharacterData("total_set/matrix.nex")
 taxa <- morpho.taxa()
 moves = VectorMoves()
 monitors = VectorMonitors()
@@ -18,12 +18,15 @@ rates_indicator.setValue(15);
 moves.append( mvRandomGeometricWalk(rates_indicator, weight=10.0, tune=FALSE) );
 rates := rates_vec[rates_indicator]
 
-site_rates_indicator ~ dnCategorical(simplex(1, 1));
-site_rates_indicator.setValue(2);
+site_rates_indicator ~ dnCategorical(simplex(1, 1, 1));
+site_rates_indicator.setValue(3);
 site_ratesGamma := fnDiscretizeGamma(alpha, alpha, rates)
 moves.append( mvRandomGeometricWalk(site_rates_indicator, weight=10.0, tune=FALSE) );
 site_ratesLognormal := fnDiscretizeDistribution( dnLognormal(ln(alpha), 0.01), rates )
-site_vec = v(site_ratesGamma, site_ratesLognormal)
+
+site_rates_no_ACRV := rep(1.0, rates)
+
+site_vec = v(site_rates_no_ACRV, site_ratesGamma, site_ratesLognormal)
 site_rates := site_vec[site_rates_indicator]
 
 
@@ -31,15 +34,16 @@ source("rjMCMC/model_Mk.Rev")
 
 
 mymodel = model(alpha, br_len_lambda)
+mymodel.ignoreAllData()
 
 
 
-monitors.append(mnModel(filename="output/acrv_count.log", printgen=100))
-monitors.append(mnFile(filename="output/acrv_count.trees", printgen=100,  phylogeny))
+monitors.append(mnModel(filename="outputUP/acrv_count.log", printgen=100))
+monitors.append(mnFile(filename="outputUP/acrv_count.trees", printgen=100,  phylogeny))
 monitors.append(mnScreen(printgen=100, site_rates_indicator ))
 
 
-mymcmc = mcmc(mymodel, monitors, moves, nrun=2)
+mymcmc = mcmc(mymodel, monitors, moves, nrun=2, combine = "mixed")
 mymcmc.run(generations=10000000)
 
 q()
